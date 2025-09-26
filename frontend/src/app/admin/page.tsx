@@ -21,6 +21,8 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [admin, setAdmin] = useState<any>(null);
   const router = useRouter();
 
@@ -29,6 +31,14 @@ export default function AdminDashboard() {
     last_name: '',
     email: '',
     password: '',
+    mobile_number: '',
+    profile_picture: ''
+  });
+
+  const [editUser, setEditUser] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
     mobile_number: '',
     profile_picture: ''
   });
@@ -106,6 +116,67 @@ export default function AdminDashboard() {
     } catch (err) {
       setError('Failed to create user');
     }
+  };
+
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(`http://localhost:5000/admin/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(editUser),
+      });
+
+      if (response.ok) {
+        setShowEditForm(false);
+        setEditingUser(null);
+        setEditUser({
+          first_name: '',
+          last_name: '',
+          email: '',
+          mobile_number: '',
+          profile_picture: ''
+        });
+        fetchUsers();
+        setError('');
+      } else {
+        const data = await response.json();
+        setError(data.message);
+      }
+    } catch (err) {
+      setError('Failed to update user');
+    }
+  };
+
+  const startEditUser = (user: User) => {
+    setEditingUser(user);
+    setEditUser({
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      mobile_number: user.mobile_number,
+      profile_picture: user.profile_picture || ''
+    });
+    setShowEditForm(true);
+    setShowCreateForm(false);
+  };
+
+  const cancelEdit = () => {
+    setShowEditForm(false);
+    setEditingUser(null);
+    setEditUser({
+      first_name: '',
+      last_name: '',
+      email: '',
+      mobile_number: '',
+      profile_picture: ''
+    });
   };
 
   const handleDeleteUser = async (userId: number) => {
@@ -189,13 +260,25 @@ export default function AdminDashboard() {
       <main className="relative z-10 max-w-7xl mx-auto py-6 px-4">
         <div className="mb-6">
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200 shadow-md"
+            onClick={() => {
+              setShowCreateForm(!showCreateForm);
+              setShowEditForm(false);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200 shadow-md mr-4"
           >
             {showCreateForm ? 'Cancel' : 'Create New User'}
           </button>
+          {showEditForm && (
+            <button
+              onClick={cancelEdit}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200 shadow-md"
+            >
+              Cancel Edit
+            </button>
+          )}
         </div>
 
+        {/* Create User Form */}
         {showCreateForm && (
           <div className="bg-white bg-opacity-95 backdrop-blur-sm p-6 rounded-lg shadow-xl mb-6">
             <h2 className="text-lg font-bold text-gray-900 mb-4">Create New User</h2>
@@ -277,6 +360,88 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* Edit User Form */}
+        {showEditForm && editingUser && (
+          <div className="bg-white bg-opacity-95 backdrop-blur-sm p-6 rounded-lg shadow-xl mb-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">
+              Edit User: {editingUser.first_name} {editingUser.last_name}
+            </h2>
+            <form onSubmit={handleEditUser} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">First Name</label>
+                  <input
+                    type="text"
+                    placeholder="First Name"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                    value={editUser.first_name}
+                    onChange={(e) => setEditUser({...editUser, first_name: e.target.value})}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-1">Last Name</label>
+                  <input
+                    type="text"
+                    placeholder="Last Name"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                    value={editUser.last_name}
+                    onChange={(e) => setEditUser({...editUser, last_name: e.target.value})}
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1">Email</label>
+                <input
+                  type="email"
+                  placeholder="Email"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                  value={editUser.email}
+                  onChange={(e) => setEditUser({...editUser, email: e.target.value})}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1">Mobile Number</label>
+                <input
+                  type="tel"
+                  placeholder="Mobile Number"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                  value={editUser.mobile_number}
+                  onChange={(e) => setEditUser({...editUser, mobile_number: e.target.value})}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-1">Profile Picture URL (optional)</label>
+                <input
+                  type="url"
+                  placeholder="Profile Picture URL (optional)"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900"
+                  value={editUser.profile_picture}
+                  onChange={(e) => setEditUser({...editUser, profile_picture: e.target.value})}
+                />
+              </div>
+              <div className="flex space-x-4">
+                <button
+                  type="submit"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200"
+                >
+                  Update User
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition duration-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 bg-opacity-95 backdrop-blur-sm">
             {error}
@@ -325,12 +490,20 @@ export default function AdminDashboard() {
                         </div>
                       </div>
                     </div>
-                    <button
-                      onClick={() => handleDeleteUser(user.id)}
-                      className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition duration-200"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => startEditUser(user)}
+                        className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm transition duration-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user.id)}
+                        className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm transition duration-200"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </li>
               ))}

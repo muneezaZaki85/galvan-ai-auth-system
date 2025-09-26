@@ -1,27 +1,9 @@
-from flask import request
+from flask import request, current_app
 from flask_restx import Resource, Namespace, fields
-from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity, get_jwt
 from datetime import datetime
-import sys
-import os
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
-def get_db():
-    from __main__ import db
-    return db
-
-
-def get_models():
-    from app.models import User
-    return User
-
-
-def get_utils():
-    from app.utils import generate_otp, send_otp_email, get_otp_expiry
-    return generate_otp, send_otp_email, get_otp_expiry
-
+from .models import User
+from .utils import generate_otp, send_otp_email, get_otp_expiry
 
 auth_ns = Namespace('auth', description='Authentication operations')
 
@@ -44,6 +26,19 @@ otp_model = auth_ns.model('OTPVerify', {
     'otp_code': fields.String(required=True)
 })
 
+refresh_response = auth_ns.model('RefreshResponse', {
+    'message': fields.String(description='Success message'),
+    'access_token': fields.String(description='New access token')
+})
+
+login_response = auth_ns.model('LoginResponse', {
+    'message': fields.String(description='Success message'),
+    'access_token': fields.String(description='Access token'),
+    'refresh_token': fields.String(description='Refresh token'),
+    'user': fields.Raw(description='User data'),
+    'expires_in': fields.Integer(description='Token expiry in seconds')
+})
+
 
 @auth_ns.route('/register')
 class Register(Resource):
@@ -51,9 +46,7 @@ class Register(Resource):
     def post(self):
         try:
             data = request.get_json()
-            db = get_db()
-            User = get_models()
-            generate_otp, send_otp_email, get_otp_expiry = get_utils()
+            db = current_app.extensions['sqlalchemy']
 
             if User.query.filter_by(email=data['email']).first():
                 return {'message': 'Email already exists'}, 400
@@ -89,10 +82,9 @@ class VerifyOTP(Resource):
     def post(self):
         try:
             data = request.get_json()
-            db = get_db()
-            User = get_models()
+            db = current_app.extensions['sqlalchemy']
 
-            user = User.query.filter_by(email=data['email']).first()
+            user = User.query.filter_by(email=current_user_email).first()
 
             if not user:
                 return {'message': 'User not found'}, 404
@@ -120,10 +112,10 @@ class VerifyOTP(Resource):
 @auth_ns.route('/login')
 class Login(Resource):
     @auth_ns.expect(login_model)
+    @auth_ns.marshal_with(login_response)
     def post(self):
         try:
             data = request.get_json()
-            User = get_models()
 
             user = User.query.filter_by(email=data['email']).first()
 
@@ -133,14 +125,15 @@ class Login(Resource):
             if not user.is_verified:
                 return {'message': 'Email not verified'}, 401
 
-            access_token = create_access_token(identity=user.email)
+            access_token = create_access_token(identity=user.email, fresh=True)
             refresh_token = create_refresh_token(identity=user.email)
 
             return {
                 'message': 'Login successful',
                 'access_token': access_token,
                 'refresh_token': refresh_token,
-                'user': user.to_dict()
+                'user': user.to_dict(),
+                'expires_in': 3600
             }, 200
 
         except Exception as e:
@@ -150,10 +143,54 @@ class Login(Resource):
 @auth_ns.route('/refresh')
 class RefreshToken(Resource):
     @jwt_required(refresh=True)
+    @auth_ns.marshal_with(refresh_response)
+    @auth_ns.doc(
+        security='refreshAuth',
+        description='Refresh access token using refresh token. Send refresh token in Authorization header as "Bearer <refresh_token>"'
+    )
     def post(self):
         try:
-            current_user = get_jwt_identity()
-            access_token = create_access_token(identity=current_user)
-            return {'access_token': access_token}, 200
+            current_user_email = get_jwt_identity()
+
+            user = User.query.filter_by(email=current_user_email).first()
+            if not user:
+                return {'message': 'User not found'}, 404
+
+            if not user.is_verified:
+                return {'message': 'User account not verified'}, 401
+
+            new_access_token = create_access_token(identity=current_user_email, fresh=False)
+
+            return {
+                'message': 'Token refreshed successfully',
+                'access_token': new_access_token
+            }, 200
+
         except Exception as e:
             return {'message': f'Token refresh failed: {str(e)}'}, 500
+
+
+@auth_ns.route('/logout')
+class Logout(Resource):
+    @jwt_required()
+    @auth_ns.doc(security='apikey')
+    def post(self):
+        return {'message': 'Successfully logged out'}, 200
+
+
+@auth_ns.route('/profile')
+class Profile(Resource):
+    @jwt_required()
+    @auth_ns.doc(security='apikey')
+    def get(self):
+        try:
+            current_user_email = get_jwt_identity()
+
+            user = User.query.filter_by(email=data['email']).first()
+            if not user:
+                return {'message': 'User not found'}, 404
+
+            return {'user': user.to_dict()}, 200
+
+        except Exception as e:
+            return {'message': f'Failed to get profile: {str(e)}'}, 500
