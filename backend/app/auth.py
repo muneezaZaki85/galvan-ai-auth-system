@@ -84,7 +84,7 @@ class VerifyOTP(Resource):
             data = request.get_json()
             db = current_app.extensions['sqlalchemy']
 
-            user = User.query.filter_by(email=current_user_email).first()
+            user = User.query.filter_by(email=data['email']).first()
 
             if not user:
                 return {'message': 'User not found'}, 404
@@ -186,7 +186,7 @@ class Profile(Resource):
         try:
             current_user_email = get_jwt_identity()
 
-            user = User.query.filter_by(email=data['email']).first()
+            user = User.query.filter_by(email=current_user_email).first()
             if not user:
                 return {'message': 'User not found'}, 404
 
